@@ -1,0 +1,7 @@
+# Binaries
+tests/runner
+*.o
+*.out
+
+# Artifacts
+.DS_Store
