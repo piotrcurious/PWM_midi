@@ -1,5 +1,6 @@
 # Binaries
 tests/runner
+tests/gui_bridge
 *.o
 *.out
 

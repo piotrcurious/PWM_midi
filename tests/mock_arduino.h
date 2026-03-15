@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <unistd.h>
 
 #define A0 0
 #define A1 1
@@ -20,10 +21,10 @@
 class MockSerial {
 public:
     void begin(int baud) {}
-    void print(const char* s) { /* std::cout << s; */ }
-    void print(int i) { /* std::cout << i; */ }
-    void println(const char* s) { /* std::cout << s << std::endl; */ }
-    void println(int i) { /* std::cout << i << std::endl; */ }
+    void print(const char* s) { /* std::cerr << s; */ }
+    void print(int i) { /* std::cerr << i; */ }
+    void println(const char* s) { /* std::cerr << s << std::endl; */ }
+    void println(int i) { /* std::cerr << i << std::endl; */ }
 };
 
 // Mock MIDI
@@ -67,7 +68,9 @@ public:
 inline int analogRead(int pin) { return 0; }
 inline void pinMode(int pin, int mode) {}
 inline void digitalWrite(int pin, int val) {}
-inline void delay(int ms) {}
+inline void delay(int ms) {
+    usleep(ms * 1000);
+}
 
 inline long map(long x, long in_min, long in_max, long out_min, long out_max) {
   if (in_max == in_min) return out_min;

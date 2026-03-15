@@ -20,7 +20,6 @@ void test_predictError() {
     predictError(50);
     predictError(60);
     int pred = predictError(70);
-    // trend should be 1. pred = 70 + 2 + random(-2,3)
     assert(pred >= 70 && pred <= 75);
     std::cout << "predictError tests passed!" << std::endl;
 }
@@ -40,7 +39,6 @@ void run_progression_recording(const std::string& filename) {
 int main(int argc, char** argv) {
     if (argc > 1 && strcmp(argv[1], "--live") == 0) {
         MIDI.liveMode = true;
-        // Run a loop of progressions
         for(int i=0; i<100; i++) {
             playChordProgression(rand()%128, 60 + (rand()%12));
         }
