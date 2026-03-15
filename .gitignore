@@ -3,5 +3,8 @@ tests/runner
 *.o
 *.out
 
+# MIDI Files
+*.mid
+
 # Artifacts
 .DS_Store

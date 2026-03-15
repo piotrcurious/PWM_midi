@@ -5,6 +5,9 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
 
 #define A0 0
 #define A1 1
@@ -33,13 +36,30 @@ public:
         bool on;
     };
     std::vector<NoteEvent> events;
+    bool liveMode = false;
 
     void begin(int channel) {}
+
     void sendNoteOn(int note, int velocity, int channel) {
         events.push_back({note, velocity, channel, true});
+        if (liveMode) {
+            unsigned char status = 0x90 | (unsigned char)(channel - 1);
+            putchar(status);
+            putchar(note);
+            putchar(velocity);
+            fflush(stdout);
+        }
     }
+
     void sendNoteOff(int note, int velocity, int channel) {
         events.push_back({note, velocity, channel, false});
+        if (liveMode) {
+            unsigned char status = 0x80 | (unsigned char)(channel - 1);
+            putchar(status);
+            putchar(note);
+            putchar(velocity);
+            fflush(stdout);
+        }
     }
 };
 
@@ -50,6 +70,7 @@ inline void digitalWrite(int pin, int val) {}
 inline void delay(int ms) {}
 
 inline long map(long x, long in_min, long in_max, long out_min, long out_max) {
+  if (in_max == in_min) return out_min;
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
@@ -59,7 +80,13 @@ inline T constrain(T mvg, L lo, H hi) {
 }
 
 inline long random(long min, long max) {
-    return min; // Predictable for testing
+    static bool seeded = false;
+    if (!seeded) {
+        srand(time(NULL));
+        seeded = true;
+    }
+    if (max == min) return min;
+    return min + (rand() % (max - min));
 }
 
 #endif
