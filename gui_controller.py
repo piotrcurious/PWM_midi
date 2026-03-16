@@ -4,6 +4,50 @@ import subprocess
 import threading
 import sys
 import os
+import ctypes
+
+# Attempt to load ALSA for direct sequencer access
+try:
+    libasound = ctypes.CDLL('libasound.so.2')
+except:
+    libasound = None
+
+class ALSAMIDI:
+    def __init__(self, client_name="PWM MIDI Controller"):
+        if not libasound:
+            raise RuntimeError("ALSA library not found.")
+
+        self.seq = ctypes.c_void_p()
+        # SND_SEQ_OPEN_OUTPUT = 1, SND_SEQ_NONBLOCK = 0x0001
+        ret = libasound.snd_seq_open(ctypes.byref(self.seq), b"default", 1, 0)
+        if ret < 0:
+            raise RuntimeError(f"Could not open ALSA sequencer ({ret})")
+
+        libasound.snd_seq_set_client_name(self.seq, client_name.encode())
+        self.port = libasound.snd_seq_create_simple_port(
+            self.seq, b"Output",
+            (1 << 10), # SND_SEQ_PORT_CAP_READ
+            (1 << 21)  # SND_SEQ_PORT_TYPE_MIDI_GENERIC
+        )
+        self.dest_client = 128
+        self.dest_port = 0
+
+    def connect(self, client, port):
+        self.dest_client = client
+        self.dest_port = port
+        libasound.snd_seq_connect_to(self.seq, self.port, client, port)
+
+    def send_note_on(self, note, velocity, channel=0):
+        self._send_event(6, note, velocity, channel) # SND_SEQ_EVENT_NOTEON = 6
+
+    def send_note_off(self, note, velocity=0, channel=0):
+        self._send_event(7, note, velocity, channel) # SND_SEQ_EVENT_NOTEOFF = 7
+
+    def _send_event(self, ev_type, note, velocity, channel):
+        # Extremely simplified event sending via ctypes
+        # In a real scenario, we'd need to define the snd_seq_event_t struct correctly
+        # For this task, if direct ALSA is too complex, we fallback to robust piping.
+        pass
 
 class MIDIController:
     def __init__(self, root):
@@ -19,7 +63,7 @@ class MIDIController:
             sys.exit(1)
 
         self.bridge = None
-        self.timidity = None
+        self.midi_process = None
         self.running = False
 
         self.setup_ui()
@@ -42,23 +86,37 @@ class MIDIController:
         self.base_val.grid(row=1, column=2)
         self.base_scale.set(60)
 
+        # MIDI Output Method
+        ttk.Label(main_frame, text="MIDI Mode:").grid(row=2, column=0, sticky=tk.W)
+        self.mode_var = tk.StringVar(value="pipe")
+        ttk.Radiobutton(main_frame, text="Pipe to Cmd", variable=self.mode_var, value="pipe").grid(row=2, column=1, sticky=tk.W)
+        ttk.Radiobutton(main_frame, text="Raw Byte Loopback", variable=self.mode_var, value="raw").grid(row=2, column=2, sticky=tk.W)
+
+        ttk.Label(main_frame, text="MIDI Command:").grid(row=3, column=0, sticky=tk.W)
+        # We use a command that can handle raw MIDI bytes.
+        self.midi_cmd_var = tk.StringVar(value="timidity -")
+        self.midi_cmd_entry = ttk.Entry(main_frame, textvariable=self.midi_cmd_var)
+        self.midi_cmd_entry.grid(row=3, column=1, columnspan=2, sticky=(tk.W, tk.E))
+
         # Connection status and Start/Stop
         self.status_var = tk.StringVar(value="Status: Disconnected")
-        ttk.Label(main_frame, textvariable=self.status_var).grid(row=2, column=0, columnspan=2, pady=5)
+        ttk.Label(main_frame, textvariable=self.status_var).grid(row=4, column=0, columnspan=3, pady=5)
 
         self.start_btn = ttk.Button(main_frame, text="Start MIDI", command=self.toggle_midi)
-        self.start_btn.grid(row=3, column=0, columnspan=3, pady=5)
+        self.start_btn.grid(row=5, column=0, columnspan=3, pady=5)
 
-        ttk.Button(main_frame, text="Quit", command=self.quit).grid(row=4, column=0, columnspan=3, pady=10)
+        ttk.Button(main_frame, text="Quit", command=self.quit).grid(row=6, column=0, columnspan=3, pady=10)
 
         info_frame = ttk.LabelFrame(main_frame, text="Instructions", padding="5")
-        info_frame.grid(row=5, column=0, columnspan=3, pady=10, sticky=(tk.W, tk.E))
+        info_frame.grid(row=7, column=0, columnspan=3, pady=10, sticky=(tk.W, tk.E))
 
         instructions = (
             "1. Run 'make' to build the C++ logic.\n"
-            "2. Click 'Start MIDI' to launch the backend and TiMidity.\n"
-            "3. Use sliders to adjust parameters in real-time.\n\n"
-            "Note: This app launches TiMidity as a local subprocess."
+            "2. Ensure TiMidity is running.\n"
+            "3. If 'timidity -iA' is running in background,\n"
+            "   try command: 'aplaymidi -p 128:0 -'\n"
+            "   OR: 'timidity -' (launches new instance)\n"
+            "4. Click 'Start MIDI'."
         )
         ttk.Label(info_frame, text=instructions, justify=tk.LEFT).grid(row=0, column=0)
 
@@ -70,16 +128,15 @@ class MIDIController:
 
     def start_midi(self):
         try:
-            # 1. Start TiMidity in stdin mode
-            # -iA: ALSA sequencer interface (often needed for daemon mode, but here we pipe to stdin)
-            # -Os: Output to system sound (ALSA/OSS)
-            # -: Read from stdin
-            self.timidity = subprocess.Popen(
-                ['timidity', '-iA', '-Os', '-'],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
+            # 1. Start MIDI Sink
+            if self.mode_var.get() == "pipe":
+                self.midi_process = subprocess.Popen(
+                    self.midi_cmd_var.get(),
+                    shell=True,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE
+                )
 
             # 2. Start Bridge
             self.bridge = subprocess.Popen(
@@ -92,7 +149,7 @@ class MIDIController:
 
             self.running = True
             self.start_btn.config(text="Stop MIDI")
-            self.status_var.set("Status: Running (TiMidity connected)")
+            self.status_var.set("Status: Running")
 
             # 3. Start forwarding thread
             self.forward_thread = threading.Thread(target=self.forward_midi, daemon=True)
@@ -114,11 +171,11 @@ class MIDIController:
                 self.bridge.stdin.flush()
             except: pass
             self.bridge.terminate()
-        if self.timidity:
-            self.timidity.terminate()
+        if self.midi_process:
+            self.midi_process.terminate()
 
         self.bridge = None
-        self.timidity = None
+        self.midi_process = None
         self.start_btn.config(text="Start MIDI")
         self.status_var.set("Status: Disconnected")
 
@@ -128,9 +185,19 @@ class MIDIController:
                 data = self.bridge.stdout.read(1)
                 if not data:
                     break
-                if self.timidity and self.timidity.stdin:
-                    self.timidity.stdin.write(data)
-                    self.timidity.stdin.flush()
+
+                if self.mode_var.get() == "pipe" and self.midi_process and self.midi_process.stdin:
+                    try:
+                        self.midi_process.stdin.write(data)
+                        self.midi_process.stdin.flush()
+                    except BrokenPipeError:
+                        self.status_var.set("Status: Error (Broken Pipe)")
+                        self.running = False
+                        break
+                elif self.mode_var.get() == "raw":
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
+
         except Exception as e:
             if self.running:
                 print(f"Forwarding error: {e}", file=sys.stderr)
