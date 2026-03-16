@@ -75,10 +75,7 @@ class MIDIController:
     def refresh_ports(self):
         self.available_ports = []
         try:
-            # Try to list ports using aconnect -o
             output = subprocess.check_output(['aconnect', '-o'], text=True)
-            # Parse output: client 128: 'TiMidity' [type=user,pid=13410]
-            #                    0 'TiMidity port 0 '
             current_client = None
             for line in output.split('\n'):
                 client_match = re.search(r'client (\d+): \'(.*?)\'', line)
@@ -96,11 +93,10 @@ class MIDIController:
             pass
 
         if not self.available_ports:
-            self.available_ports = ["128:0 (Default TiMidity)"]
+            self.available_ports = ["128:0 (TiMidity default)"]
 
         self.port_combo['values'] = self.available_ports
         if self.available_ports:
-            # Try to select TiMidity by default
             idx = 0
             for i, p in enumerate(self.available_ports):
                 if "TiMidity" in p:
@@ -116,25 +112,22 @@ class MIDIController:
 
     def start_midi(self):
         try:
+            # Extract port if possible
+            port_str = self.port_var.get()
+            m = re.match(r'(\d+):(\d+)', port_str)
+            args = [self.bridge_path]
+            if m:
+                args.extend([m.group(1), m.group(2)])
+
             # Start Bridge
             self.bridge = subprocess.Popen(
-                [self.bridge_path],
+                args,
                 stdin=subprocess.PIPE,
                 stdout=sys.stdout,
                 stderr=sys.stderr,
                 text=True,
                 bufsize=1
             )
-
-            # Extract port if possible
-            port_str = self.port_var.get()
-            m = re.match(r'(\d+):(\d+)', port_str)
-            if m:
-                client_id = m.group(1)
-                port_id = m.group(2)
-                # We can't easily tell the bridge which port to connect to via args yet
-                # but we can use aconnect manually from Python
-                threading.Timer(1.0, lambda: subprocess.run(['aconnect', 'PWM MIDI Bridge', f'{client_id}:{port_id}'])).start()
 
             self.running = True
             self.start_btn.config(text="Stop MIDI")

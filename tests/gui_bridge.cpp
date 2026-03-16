@@ -14,11 +14,24 @@ int main(int argc, char** argv) {
     int error = 0;
     int base = 60;
 
+    int dest_client = -1;
+    int dest_port = -1;
+
+    // Parse destination port if provided: ./gui_bridge 128 0
+    if (argc >= 3) {
+        dest_client = std::stoi(argv[1]);
+        dest_port = std::stoi(argv[2]);
+    }
+
     ALSAMIDIClient alsa;
     if (alsa.open("PWM MIDI Bridge")) {
-        // Attempt to connect to TiMidity (often 128:0)
-        // If it fails, user can still use aconnect
-        alsa.connect(128, 0);
+        if (dest_client != -1 && dest_port != -1) {
+            if (alsa.connect(dest_client, dest_port)) {
+                std::cerr << "Connected to ALSA port " << dest_client << ":" << dest_port << std::endl;
+            } else {
+                std::cerr << "Failed to connect to ALSA port " << dest_client << ":" << dest_port << std::endl;
+            }
+        }
         MIDI.alsaClient = &alsa;
     }
 

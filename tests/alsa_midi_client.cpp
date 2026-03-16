@@ -130,7 +130,12 @@ void ALSAMIDIClient::close() {
 bool ALSAMIDIClient::connect(int destClient, int destPort) {
     if (!seq) return false;
     int ret = p_snd_seq_connect_to((snd_seq_t*)seq, port, destClient, destPort);
-    return ret >= 0;
+    // 16 is EEXIST, which means already connected.
+    if (ret < 0 && ret != -16) {
+        std::cerr << "ALSA Connect failed: " << ret << " (dest " << destClient << ":" << destPort << ")" << std::endl;
+        return false;
+    }
+    return true;
 }
 
 void ALSAMIDIClient::sendNoteOn(int channel, int note, int velocity) {
@@ -139,13 +144,13 @@ void ALSAMIDIClient::sendNoteOn(int channel, int note, int velocity) {
     memset(&ev, 0, sizeof(ev));
     ev.type = SND_SEQ_EVENT_NOTEON;
     ev.flags = SND_SEQ_TIME_STAMP_TICK | SND_SEQ_TIME_MODE_ABS;
-    ev.source.port = port;
+    ev.source.port = (unsigned char)port;
     ev.dest.client = 254; // SND_SEQ_ADDRESS_SUBSCRIBERS
     ev.dest.port = 254;
     ev.queue = 253; // SND_SEQ_QUEUE_DIRECT
-    ev.data.note.channel = channel;
-    ev.data.note.note = note;
-    ev.data.note.velocity = velocity;
+    ev.data.note.channel = (unsigned char)channel;
+    ev.data.note.note = (unsigned char)note;
+    ev.data.note.velocity = (unsigned char)velocity;
     p_snd_seq_event_output((snd_seq_t*)seq, &ev);
     p_snd_seq_drain_output((snd_seq_t*)seq);
 }
@@ -156,13 +161,13 @@ void ALSAMIDIClient::sendNoteOff(int channel, int note, int velocity) {
     memset(&ev, 0, sizeof(ev));
     ev.type = SND_SEQ_EVENT_NOTEOFF;
     ev.flags = SND_SEQ_TIME_STAMP_TICK | SND_SEQ_TIME_MODE_ABS;
-    ev.source.port = port;
+    ev.source.port = (unsigned char)port;
     ev.dest.client = 254;
     ev.dest.port = 254;
     ev.queue = 253;
-    ev.data.note.channel = channel;
-    ev.data.note.note = note;
-    ev.data.note.velocity = velocity;
+    ev.data.note.channel = (unsigned char)channel;
+    ev.data.note.note = (unsigned char)note;
+    ev.data.note.velocity = (unsigned char)velocity;
     p_snd_seq_event_output((snd_seq_t*)seq, &ev);
     p_snd_seq_drain_output((snd_seq_t*)seq);
 }
