@@ -3,28 +3,33 @@
 #include <iostream>
 #include <string>
 #include <fcntl.h>
-#include <poll.h>
+#include <unistd.h>
 
 void set_nonblocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-int main() {
-    MIDI.liveMode = true;
+int main(int argc, char** argv) {
     int error = 0;
     int base = 60;
 
-    set_nonblocking(0); // Set stdin to non-blocking
+    ALSAMIDIClient alsa;
+    if (alsa.open("PWM MIDI Bridge")) {
+        // Attempt to connect to TiMidity (often 128:0)
+        // If it fails, user can still use aconnect
+        alsa.connect(128, 0);
+        MIDI.alsaClient = &alsa;
+    }
+
+    set_nonblocking(0);
 
     char buffer[256];
     std::string line;
 
     while (true) {
-        // Run one progression step
         playChordProgression(error, base);
 
-        // Non-blockingly check for updates from stdin
         while (true) {
             ssize_t n = read(0, buffer, sizeof(buffer)-1);
             if (n <= 0) break;
@@ -48,11 +53,7 @@ int main() {
                 } catch (...) {}
             }
         }
-
-        // Short sleep to avoid maxing CPU if playChordProgression returns too fast
-        // though playChordProgression has internal delays.
         usleep(10000);
     }
-
     return 0;
 }

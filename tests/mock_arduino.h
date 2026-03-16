@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <unistd.h>
+#include "alsa_midi_client.h"
 
 #define A0 0
 #define A1 1
@@ -38,28 +39,21 @@ public:
     };
     std::vector<NoteEvent> events;
     bool liveMode = false;
+    ALSAMIDIClient* alsaClient = nullptr;
 
     void begin(int channel) {}
 
     void sendNoteOn(int note, int velocity, int channel) {
         events.push_back({note, velocity, channel, true});
-        if (liveMode) {
-            unsigned char status = 0x90 | (unsigned char)(channel - 1);
-            putchar(status);
-            putchar(note);
-            putchar(velocity);
-            fflush(stdout);
+        if (alsaClient) {
+            alsaClient->sendNoteOn(channel - 1, note, velocity);
         }
     }
 
     void sendNoteOff(int note, int velocity, int channel) {
         events.push_back({note, velocity, channel, false});
-        if (liveMode) {
-            unsigned char status = 0x80 | (unsigned char)(channel - 1);
-            putchar(status);
-            putchar(note);
-            putchar(velocity);
-            fflush(stdout);
+        if (alsaClient) {
+            alsaClient->sendNoteOff(channel - 1, note, velocity);
         }
     }
 };
