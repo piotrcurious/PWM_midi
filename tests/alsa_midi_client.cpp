@@ -10,39 +10,56 @@
 #define SND_SEQ_PORT_TYPE_MIDI_GENERIC (1<<21)
 #define SND_SEQ_EVENT_NOTEON 6
 #define SND_SEQ_EVENT_NOTEOFF 7
+#define SND_SEQ_TIME_STAMP_TICK 0
+#define SND_SEQ_TIME_MODE_ABS 0
 
 typedef struct _snd_seq snd_seq_t;
-typedef struct _snd_seq_event {
-    unsigned char type;
-    unsigned char flags;
-    unsigned char tag;
-    struct {
-        unsigned char client;
-        unsigned char port;
-    } queue;
-    struct {
-        unsigned int tv_sec;
-        unsigned int tv_nsec;
-    } time;
-    struct {
-        unsigned char client;
-        unsigned char port;
-    } source;
-    struct {
-        unsigned char client;
-        unsigned char port;
-    } dest;
-    union {
-        struct {
-            unsigned char channel;
-            unsigned char note;
-            unsigned char velocity;
-            unsigned char off_velocity;
-            unsigned int duration;
-        } note;
-        // ... other event types omitted for brevity
+typedef struct snd_seq_addr {
+	unsigned char client;
+	unsigned char port;
+} snd_seq_addr_t;
+
+typedef struct snd_seq_tick_time {
+    unsigned int tick;
+} snd_seq_tick_time_t;
+
+typedef struct snd_seq_real_time {
+	unsigned int tv_sec;
+	unsigned int tv_nsec;
+} snd_seq_real_time_t;
+
+typedef union snd_seq_timestamp {
+	snd_seq_tick_time_t tick;
+	snd_seq_real_time_t time;
+} snd_seq_timestamp_t;
+
+typedef struct snd_seq_event {
+	unsigned char type;
+	unsigned char flags;
+	unsigned char tag;
+	unsigned char queue;
+	snd_seq_timestamp_t time;
+	snd_seq_addr_t source;
+	snd_seq_addr_t dest;
+	union {
+		struct {
+			unsigned char channel;
+			unsigned char note;
+			unsigned char velocity;
+			unsigned char off_velocity;
+			unsigned int duration;
+		} note;
+		struct {
+			unsigned char channel;
+			unsigned char param;
+			signed int value;
+		} control;
+		struct {
+			unsigned int len;
+			void *ptr;
+		} ext;
         unsigned char raw8[8];
-    } data;
+	} data;
 } snd_seq_event_t;
 
 // Function pointers for ALSA functions
@@ -51,14 +68,16 @@ typedef int (*snd_seq_close_t)(snd_seq_t *);
 typedef int (*snd_seq_set_client_name_t)(snd_seq_t *, const char *);
 typedef int (*snd_seq_create_simple_port_t)(snd_seq_t *, const char *, unsigned int, unsigned int);
 typedef int (*snd_seq_connect_to_t)(snd_seq_t *, int, int, int);
-typedef int (*snd_seq_event_output_direct_t)(snd_seq_t *, snd_seq_event_t *);
+typedef int (*snd_seq_event_output_t)(snd_seq_t *, snd_seq_event_t *);
+typedef int (*snd_seq_drain_output_t)(snd_seq_t *);
 
 static snd_seq_open_t p_snd_seq_open;
 static snd_seq_close_t p_snd_seq_close;
 static snd_seq_set_client_name_t p_snd_seq_set_client_name;
 static snd_seq_create_simple_port_t p_snd_seq_create_simple_port;
 static snd_seq_connect_to_t p_snd_seq_connect_to;
-static snd_seq_event_output_direct_t p_snd_seq_event_output_direct;
+static snd_seq_event_output_t p_snd_seq_event_output;
+static snd_seq_drain_output_t p_snd_seq_drain_output;
 
 ALSAMIDIClient::ALSAMIDIClient() : handle(nullptr), seq(nullptr), port(-1) {}
 
@@ -69,7 +88,6 @@ ALSAMIDIClient::~ALSAMIDIClient() {
 bool ALSAMIDIClient::open(const std::string& clientName) {
     handle = dlopen("libasound.so.2", RTLD_LAZY);
     if (!handle) {
-        std::cerr << "Error: libasound.so.2 not found" << std::endl;
         return false;
     }
 
@@ -78,17 +96,16 @@ bool ALSAMIDIClient::open(const std::string& clientName) {
     p_snd_seq_set_client_name = (snd_seq_set_client_name_t)dlsym(handle, "snd_seq_set_client_name");
     p_snd_seq_create_simple_port = (snd_seq_create_simple_port_t)dlsym(handle, "snd_seq_create_simple_port");
     p_snd_seq_connect_to = (snd_seq_connect_to_t)dlsym(handle, "snd_seq_connect_to");
-    p_snd_seq_event_output_direct = (snd_seq_event_output_direct_t)dlsym(handle, "snd_seq_event_output_direct");
+    p_snd_seq_event_output = (snd_seq_event_output_t)dlsym(handle, "snd_seq_event_output");
+    p_snd_seq_drain_output = (snd_seq_drain_output_t)dlsym(handle, "snd_seq_drain_output");
 
     if (!p_snd_seq_open || !p_snd_seq_close || !p_snd_seq_set_client_name ||
-        !p_snd_seq_create_simple_port || !p_snd_seq_connect_to || !p_snd_seq_event_output_direct) {
-        std::cerr << "Error: ALSA symbols not found" << std::endl;
+        !p_snd_seq_create_simple_port || !p_snd_seq_connect_to || !p_snd_seq_event_output || !p_snd_seq_drain_output) {
         return false;
     }
 
     int ret = p_snd_seq_open((snd_seq_t**)&seq, "default", SND_SEQ_OPEN_OUTPUT, 0);
     if (ret < 0) {
-        std::cerr << "Error: snd_seq_open failed: " << ret << std::endl;
         return false;
     }
 
@@ -121,16 +138,16 @@ void ALSAMIDIClient::sendNoteOn(int channel, int note, int velocity) {
     snd_seq_event_t ev;
     memset(&ev, 0, sizeof(ev));
     ev.type = SND_SEQ_EVENT_NOTEON;
-    ev.flags = 0;
-    ev.tag = 0;
+    ev.flags = SND_SEQ_TIME_STAMP_TICK | SND_SEQ_TIME_MODE_ABS;
     ev.source.port = port;
     ev.dest.client = 254; // SND_SEQ_ADDRESS_SUBSCRIBERS
     ev.dest.port = 254;
-    ev.queue.client = 253; // SND_SEQ_QUEUE_DIRECT
+    ev.queue = 253; // SND_SEQ_QUEUE_DIRECT
     ev.data.note.channel = channel;
     ev.data.note.note = note;
     ev.data.note.velocity = velocity;
-    p_snd_seq_event_output_direct((snd_seq_t*)seq, &ev);
+    p_snd_seq_event_output((snd_seq_t*)seq, &ev);
+    p_snd_seq_drain_output((snd_seq_t*)seq);
 }
 
 void ALSAMIDIClient::sendNoteOff(int channel, int note, int velocity) {
@@ -138,19 +155,18 @@ void ALSAMIDIClient::sendNoteOff(int channel, int note, int velocity) {
     snd_seq_event_t ev;
     memset(&ev, 0, sizeof(ev));
     ev.type = SND_SEQ_EVENT_NOTEOFF;
-    ev.flags = 0;
+    ev.flags = SND_SEQ_TIME_STAMP_TICK | SND_SEQ_TIME_MODE_ABS;
     ev.source.port = port;
     ev.dest.client = 254;
     ev.dest.port = 254;
-    ev.queue.client = 253;
+    ev.queue = 253;
     ev.data.note.channel = channel;
     ev.data.note.note = note;
     ev.data.note.velocity = velocity;
-    p_snd_seq_event_output_direct((snd_seq_t*)seq, &ev);
+    p_snd_seq_event_output((snd_seq_t*)seq, &ev);
+    p_snd_seq_drain_output((snd_seq_t*)seq);
 }
 
 std::vector<ALSAMIDIClient::PortInfo> ALSAMIDIClient::listPorts() {
-    // Port listing is complex without full headers/structs.
-    // For now, we'll return an empty list or skip it.
     return {};
 }

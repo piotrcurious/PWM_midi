@@ -4,6 +4,7 @@ import subprocess
 import threading
 import sys
 import os
+import re
 
 class MIDIController:
     def __init__(self, root):
@@ -20,8 +21,10 @@ class MIDIController:
 
         self.bridge = None
         self.running = False
+        self.available_ports = []
 
         self.setup_ui()
+        self.refresh_ports()
 
     def setup_ui(self):
         main_frame = ttk.Frame(self.root, padding="10")
@@ -41,26 +44,69 @@ class MIDIController:
         self.base_val.grid(row=1, column=2)
         self.base_scale.set(60)
 
+        # Port Selection
+        ttk.Label(main_frame, text="Output Port:").grid(row=2, column=0, sticky=tk.W)
+        self.port_var = tk.StringVar()
+        self.port_combo = ttk.Combobox(main_frame, textvariable=self.port_var, state="readonly")
+        self.port_combo.grid(row=2, column=1, sticky=(tk.W, tk.E))
+
+        ttk.Button(main_frame, text="Refresh", command=self.refresh_ports).grid(row=2, column=2)
+
         # Connection status and Start/Stop
         self.status_var = tk.StringVar(value="Status: Disconnected")
-        ttk.Label(main_frame, textvariable=self.status_var).grid(row=2, column=0, columnspan=3, pady=5)
+        ttk.Label(main_frame, textvariable=self.status_var).grid(row=3, column=0, columnspan=3, pady=5)
 
         self.start_btn = ttk.Button(main_frame, text="Start MIDI", command=self.toggle_midi)
-        self.start_btn.grid(row=3, column=0, columnspan=3, pady=5)
+        self.start_btn.grid(row=4, column=0, columnspan=3, pady=5)
 
-        ttk.Button(main_frame, text="Quit", command=self.quit).grid(row=4, column=0, columnspan=3, pady=10)
+        ttk.Button(main_frame, text="Quit", command=self.quit).grid(row=5, column=0, columnspan=3, pady=10)
 
         info_frame = ttk.LabelFrame(main_frame, text="Instructions", padding="5")
-        info_frame.grid(row=5, column=0, columnspan=3, pady=10, sticky=(tk.W, tk.E))
+        info_frame.grid(row=6, column=0, columnspan=3, pady=10, sticky=(tk.W, tk.E))
 
         instructions = (
-            "1. Run 'make' to build the ALSA-enabled logic.\n"
+            "1. Run 'make' to build the C++ logic.\n"
             "2. Ensure TiMidity is running ('timidity -iA').\n"
-            "3. Click 'Start MIDI'. The bridge will connect to ALSA.\n"
-            "4. If no sound, use 'aconnect -l' to find ports and\n"
-            "   'aconnect \"PWM MIDI Bridge\" TiMidity' manually."
+            "3. Select TiMidity port from dropdown.\n"
+            "4. Click 'Start MIDI'."
         )
         ttk.Label(info_frame, text=instructions, justify=tk.LEFT).grid(row=0, column=0)
+
+    def refresh_ports(self):
+        self.available_ports = []
+        try:
+            # Try to list ports using aconnect -o
+            output = subprocess.check_output(['aconnect', '-o'], text=True)
+            # Parse output: client 128: 'TiMidity' [type=user,pid=13410]
+            #                    0 'TiMidity port 0 '
+            current_client = None
+            for line in output.split('\n'):
+                client_match = re.search(r'client (\d+): \'(.*?)\'', line)
+                if client_match:
+                    current_client = (client_match.group(1), client_match.group(2))
+                    continue
+
+                port_match = re.search(r'^\s+(\d+) \'(.*?)\'', line)
+                if port_match and current_client:
+                    port_id = port_match.group(1)
+                    port_name = port_match.group(2)
+                    display_name = f"{current_client[0]}:{port_id} ({current_client[1]} - {port_name})"
+                    self.available_ports.append(display_name)
+        except:
+            pass
+
+        if not self.available_ports:
+            self.available_ports = ["128:0 (Default TiMidity)"]
+
+        self.port_combo['values'] = self.available_ports
+        if self.available_ports:
+            # Try to select TiMidity by default
+            idx = 0
+            for i, p in enumerate(self.available_ports):
+                if "TiMidity" in p:
+                    idx = i
+                    break
+            self.port_combo.current(idx)
 
     def toggle_midi(self):
         if not self.running:
@@ -80,9 +126,19 @@ class MIDIController:
                 bufsize=1
             )
 
+            # Extract port if possible
+            port_str = self.port_var.get()
+            m = re.match(r'(\d+):(\d+)', port_str)
+            if m:
+                client_id = m.group(1)
+                port_id = m.group(2)
+                # We can't easily tell the bridge which port to connect to via args yet
+                # but we can use aconnect manually from Python
+                threading.Timer(1.0, lambda: subprocess.run(['aconnect', 'PWM MIDI Bridge', f'{client_id}:{port_id}'])).start()
+
             self.running = True
             self.start_btn.config(text="Stop MIDI")
-            self.status_var.set("Status: Running (Direct ALSA)")
+            self.status_var.set(f"Status: Running (Port {port_str})")
 
             # Sync initial values
             self.update_error(self.error_scale.get())
