@@ -11,7 +11,7 @@ void set_nonblocking(int fd) {
 }
 
 int main(int argc, char** argv) {
-    int error = 0;
+    EVContext context = {0, 0, 0, 0};
     int base = 60;
 
     int dest_client = -1;
@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
     std::string line;
 
     while (true) {
-        playChordProgression(error, base);
+        playChordProgression(context, base);
 
         while (true) {
             ssize_t n = read(0, buffer, sizeof(buffer)-1);
@@ -57,7 +57,23 @@ int main(int argc, char** argv) {
                 if (cmd.empty()) continue;
                 try {
                     if (cmd[0] == 'e') {
-                        error = std::stoi(cmd.substr(1));
+                        context.error = std::stoi(cmd.substr(1));
+                    } else if (cmd[0] == 's') {
+                        context.speed = std::stoi(cmd.substr(1));
+                    } else if (cmd[0] == 't') {
+                        context.throttle = std::stoi(cmd.substr(1));
+                    } else if (cmd[0] == 'B') {
+                        context.brake = std::stoi(cmd.substr(1));
+                    } else if (cmd[0] == 'H') {
+                        context.heading = std::stoi(cmd.substr(1));
+                    } else if (cmd[0] == 'A') {
+                        context.altitude = std::stoi(cmd.substr(1));
+                    } else if (cmd[0] == 'S') {
+                        context.satellites = std::stoi(cmd.substr(1));
+                    } else if (cmd[0] == 'L') {
+                        context.latitude = std::stod(cmd.substr(1));
+                    } else if (cmd[0] == 'O') {
+                        context.longitude = std::stod(cmd.substr(1));
                     } else if (cmd[0] == 'b') {
                         base = std::stoi(cmd.substr(1));
                     } else if (cmd == "q") {
