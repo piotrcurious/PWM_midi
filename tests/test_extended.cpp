@@ -51,7 +51,7 @@ void test_velocity_and_timing() {
 
     MIDI.events.clear();
     // Low error, no throttle, no brake = Low velocity
-    EVContext ctxLow = {10, 0, 0, 0};
+    EVContext ctxLow = {10, 0, 0, 0, 0, 0, 10, 0.0, 0.0};
     playChordProgression(ctxLow, 60);
     int lowVelocity = 0;
     for (auto it = MIDI.events.rbegin(); it != MIDI.events.rend(); ++it) {
@@ -63,7 +63,7 @@ void test_velocity_and_timing() {
 
     MIDI.events.clear();
     // High error, high throttle, no brake = High velocity
-    EVContext ctxHigh = {110, 127, 127, 0};
+    EVContext ctxHigh = {110, 127, 127, 0, 0, 0, 10, 0.0, 0.0};
     playChordProgression(ctxHigh, 60);
     int highVelocity = 0;
     for (auto it = MIDI.events.rbegin(); it != MIDI.events.rend(); ++it) {
@@ -78,7 +78,7 @@ void test_velocity_and_timing() {
 
     MIDI.events.clear();
     // High error, high throttle, HIGH BRAKE = Lowered velocity
-    EVContext ctxBrake = {110, 127, 127, 127};
+    EVContext ctxBrake = {110, 127, 127, 127, 0, 0, 10, 0.0, 0.0};
     playChordProgression(ctxBrake, 60);
     int brakeVelocity = 0;
     for (auto it = MIDI.events.rbegin(); it != MIDI.events.rend(); ++it) {
@@ -131,11 +131,46 @@ void test_voice_leading() {
     std::cout << "Voice leading tests passed!" << std::endl;
 }
 
+void test_gps_influence() {
+    std::cout << "Testing GPS influence..." << std::endl;
+
+    // Altitude test
+    MIDI.events.clear();
+    EVContext ctxSeaLevel = {50, 0, 0, 0, 0, 0, 10, 0.0, 0.0};
+    playChordProgression(ctxSeaLevel, 60);
+    int seaLevelNote = MIDI.events.front().note;
+
+    MIDI.events.clear();
+    EVContext ctxMountain = {50, 0, 0, 0, 0, 1000, 10, 0.0, 0.0}; // 1000m high
+    playChordProgression(ctxMountain, 60);
+    int mountainNote = MIDI.events.front().note;
+
+    std::cout << "Sea Level Note: " << seaLevelNote << ", Mountain Note: " << mountainNote << std::endl;
+    assert(mountainNote > seaLevelNote);
+
+    // Heading test
+    MIDI.events.clear();
+    EVContext ctxNorth = {50, 0, 0, 0, 0, 0, 10, 0.0, 0.0};
+    playChordProgression(ctxNorth, 60);
+    int northNote = MIDI.events.front().note;
+
+    MIDI.events.clear();
+    EVContext ctxEast = {50, 0, 0, 0, 90, 0, 10, 0.0, 0.0};
+    playChordProgression(ctxEast, 60);
+    int eastNote = MIDI.events.front().note;
+
+    std::cout << "North Note: " << northNote << ", East Note: " << eastNote << std::endl;
+    assert(northNote != eastNote);
+
+    std::cout << "GPS influence tests passed!" << std::endl;
+}
+
 int main() {
     test_isDissonant_extended();
     test_chord_filtering();
     test_velocity_and_timing();
     test_voice_leading();
+    test_gps_influence();
     std::cout << "Extended tests passed!" << std::endl;
     return 0;
 }

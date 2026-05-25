@@ -35,6 +35,12 @@ struct EVContext {
     int speed;    // 0-127
     int throttle; // 0-127
     int brake;    // 0-127
+    // GPS context
+    int heading;    // 0-359 degrees
+    int altitude;   // meters
+    int satellites; // signal quality (0-12)
+    double latitude;
+    double longitude;
 };
 
 // Functions

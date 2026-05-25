@@ -168,15 +168,35 @@ void playChordProgression(const EVContext& context, int currentBaseNote) {
   int chord1Size = 4;
   int chord2Size = 4;
 
+  // Heading influences the "mode" or transposition offset
+  // 0=N, 90=E, 180=S, 270=W
+  int headingOffset = map(context.heading % 360, 0, 359, 0, 11);
+
+  // Altitude shifts the overall register
+  int altitudeOffset = constrain(context.altitude / 100, -24, 24);
+
   // Base transposition offset
-  int transpositionOffset = currentBaseNote - 60;
+  int transpositionOffset = (currentBaseNote - 60) + headingOffset + altitudeOffset;
 
   // Speed influences the register (octave)
   int speedOffset = map(context.speed, 0, 127, -12, 12);
   transpositionOffset += speedOffset;
 
-  // Error selects the harmonic complexity/progression
-  if (context.error < ERROR_THRESHOLD_1) {
+  // Signal quality (satellites) adds musical jitter/instability
+  int jitter = 0;
+  if (context.satellites < 6) {
+    jitter = random(-5, 6);
+  }
+
+  // Geospatial location for "recurring themes"
+  // Use lat/lon to seed a local variations
+  long geoSeed = (long)(context.latitude * 100) + (long)(context.longitude * 100);
+  int geoVariation = abs(geoSeed) % 3;
+
+  // Error and geoVariation select the harmonic complexity/progression
+  int effectiveError = constrain(context.error + geoVariation * 10, 0, 127);
+
+  if (effectiveError < ERROR_THRESHOLD_1) {
     chord1Def = iiChord_abs; chord2Def = VChord_abs;
   } else if (context.error < ERROR_THRESHOLD_2) {
     chord1Def = iiiChord_abs; chord2Def = viChord_abs;
@@ -191,11 +211,13 @@ void playChordProgression(const EVContext& context, int currentBaseNote) {
   }
 
   // Velocity influenced by throttle and error, but dampened by brake
-  int baseVelocity = map(context.error, 0, 127, 40, 80) + map(context.throttle, 0, 127, 0, 40);
+  // Signal jitter also affects velocity
+  int baseVelocity = map(context.error, 0, 127, 40, 80) + map(context.throttle, 0, 127, 0, 40) + jitter;
   int velocity = constrain(baseVelocity - map(context.brake, 0, 127, 0, 50), 30, 120);
 
   // Rhythm (delay) influenced by speed and error, slowed down by brake
-  int baseDelay = map(context.error, 0, 127, 500, 200) - map(context.speed, 0, 127, 0, 100);
+  // Jitter affects timing slightly
+  int baseDelay = map(context.error, 0, 127, 500, 200) - map(context.speed, 0, 127, 0, 100) + (jitter * 5);
   int actualDelay = constrain(baseDelay + map(context.brake, 0, 127, 0, 400), 100, 1000);
 
   sendChord(chord1Def, chord1Size, transpositionOffset, velocity);

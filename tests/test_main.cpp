@@ -28,7 +28,7 @@ void run_progression_recording(const std::string& filename) {
     std::cout << "Recording progression to " << filename << "..." << std::endl;
     MIDI.events.clear();
     for(int e=0; e<128; e += 20) {
-        EVContext ctx = {e, 0, 0, 0};
+        EVContext ctx = {e, 0, 0, 0, 0, 0, 10, 0.0, 0.0};
         playChordProgression(ctx, 60); // C
         playChordProgression(ctx, 65); // F
         playChordProgression(ctx, 67); // G
@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
     if (argc > 1 && strcmp(argv[1], "--live") == 0) {
         MIDI.liveMode = true;
         for(int i=0; i<100; i++) {
-            EVContext ctx = {rand()%128, rand()%128, rand()%128, rand()%128};
+            EVContext ctx = {rand()%128, rand()%128, rand()%128, rand()%128, rand()%360, rand()%2000, 10, 0.0, 0.0};
             playChordProgression(ctx, 60 + (rand()%12));
         }
         return 0;

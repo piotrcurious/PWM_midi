@@ -64,6 +64,16 @@ int main(int argc, char** argv) {
                         context.throttle = std::stoi(cmd.substr(1));
                     } else if (cmd[0] == 'B') {
                         context.brake = std::stoi(cmd.substr(1));
+                    } else if (cmd[0] == 'H') {
+                        context.heading = std::stoi(cmd.substr(1));
+                    } else if (cmd[0] == 'A') {
+                        context.altitude = std::stoi(cmd.substr(1));
+                    } else if (cmd[0] == 'S') {
+                        context.satellites = std::stoi(cmd.substr(1));
+                    } else if (cmd[0] == 'L') {
+                        context.latitude = std::stod(cmd.substr(1));
+                    } else if (cmd[0] == 'O') {
+                        context.longitude = std::stod(cmd.substr(1));
                     } else if (cmd[0] == 'b') {
                         base = std::stoi(cmd.substr(1));
                     } else if (cmd == "q") {

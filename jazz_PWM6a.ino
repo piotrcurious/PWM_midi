@@ -33,7 +33,16 @@ void loop() {
   int rawBrake = analogRead(ANALOG_PIN_BRAKE);
   int brake = map(rawBrake, 0, 1023, 0, 127);
 
-  EVContext context = {currentError, speed, throttle, brake};
+  // For real GPS integration, one would use a library like TinyGPS++
+  // and read from a Serial GPS module.
+  // Here we use default/dummy values or could read more analog pins for demo.
+  int heading = 0;
+  int altitude = 0;
+  int satellites = 10;
+  double latitude = 0.0;
+  double longitude = 0.0;
+
+  EVContext context = {currentError, speed, throttle, brake, heading, altitude, satellites, latitude, longitude};
 
   Serial.print("Base Note (Tonic): ");
   Serial.println(baseNote);
