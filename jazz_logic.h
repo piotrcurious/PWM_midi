@@ -32,9 +32,9 @@ extern const int iiiChord_abs[];
 // Functions
 bool isDissonant(int note, const int* contextNotes, int contextNotesCount);
 int predictError(int currentError);
-void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOffset);
+void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOffset, int velocity = 100);
 void playChordProgression(int currentErrorValue, int currentBaseNote);
-void sendMIDINoteOnWrapper(int note);
+void sendMIDINoteOnWrapper(int note, int velocity = 127);
 void sendMIDINoteOffWrapper(int note);
 void visualFeedback(int intensity);
 

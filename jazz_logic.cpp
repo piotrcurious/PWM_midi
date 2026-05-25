@@ -18,6 +18,8 @@ static int predictionState = 0;
 
 static int lastPlayedNotes[MAX_NOTES_PER_CHORD] = {-1, -1, -1, -1};
 static int lastPlayedNotesCount = 0;
+static int lastTargetNotes[MAX_NOTES_PER_CHORD] = {-1, -1, -1, -1};
+static int lastTargetNotesCount = 0;
 
 const int iiChord_abs[] = {62, 65, 69, 72}; // Dm7
 const int VChord_abs[] =  {67, 71, 74, 77}; // G7
@@ -76,14 +78,16 @@ int predictError(int currentError) {
   return predictedError;
 }
 
-void sendMIDINoteOnWrapper(int note) {
+void sendMIDINoteOnWrapper(int note, int velocity) {
   if (note >= 0 && note <= 127) {
     #ifdef MOCK_TESTING
-    MIDI.sendNoteOn(note, 127, 1);
+    MIDI.sendNoteOn(note, velocity, 1);
     #else
-    MIDI.sendNoteOn(note, 127, 1);
+    MIDI.sendNoteOn(note, velocity, 1);
     Serial.print("MIDI Note On: ");
-    Serial.println(note);
+    Serial.print(note);
+    Serial.print(" Velocity: ");
+    Serial.println(velocity);
     #endif
   }
 }
@@ -110,24 +114,52 @@ void stopLastPlayedNotes() {
   lastPlayedNotesCount = 0;
 }
 
-void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOffset) {
+void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOffset, int velocity) {
   stopLastPlayedNotes();
 
   int currentChordNotes[MAX_NOTES_PER_CHORD] = {-1, -1, -1, -1};
   int currentChordNotesCount = 0;
 
-  for (int i = 0; i < chordDefSize && currentChordNotesCount < MAX_NOTES_PER_CHORD; ++i) {
-    int noteToPlay = chordDefinition[i] + transpositionOffset;
-    if (noteToPlay < 0 || noteToPlay > 127) continue;
+  // Simple voice leading: find the best octave for each note in the new chord
+  // to be close to the average of the last played notes.
+  int targetCenter = 64; // Default middle C area
+  if (lastTargetNotesCount > 0) {
+    long sum = 0;
+    for (int i = 0; i < lastTargetNotesCount; ++i) sum += lastTargetNotes[i];
+    targetCenter = sum / lastTargetNotesCount;
+  }
 
-    if (!isDissonant(noteToPlay, currentChordNotes, currentChordNotesCount)) {
-      sendMIDINoteOnWrapper(noteToPlay);
-      currentChordNotes[currentChordNotesCount] = noteToPlay;
-      lastPlayedNotes[currentChordNotesCount] = noteToPlay;
-      currentChordNotesCount++;
-      lastPlayedNotesCount++;
+  for (int i = 0; i < chordDefSize && currentChordNotesCount < MAX_NOTES_PER_CHORD; ++i) {
+    int noteBase = (chordDefinition[i] + transpositionOffset) % 12;
+
+    // Find octave that brings noteBase closest to targetCenter
+    int bestNote = -1;
+    int minDiff = 128;
+    for (int octave = 3; octave <= 6; ++octave) {
+      int candidate = noteBase + octave * 12;
+      int diff = abs(candidate - targetCenter);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestNote = candidate;
+      }
+    }
+
+    if (bestNote >= 0 && bestNote <= 127) {
+      if (!isDissonant(bestNote, currentChordNotes, currentChordNotesCount)) {
+        sendMIDINoteOnWrapper(bestNote, velocity);
+        currentChordNotes[currentChordNotesCount] = bestNote;
+        lastPlayedNotes[currentChordNotesCount] = bestNote;
+        currentChordNotesCount++;
+        lastPlayedNotesCount++;
+      }
     }
   }
+
+  // Update lastTargetNotes for next call
+  for (int i = 0; i < currentChordNotesCount; ++i) {
+    lastTargetNotes[i] = currentChordNotes[i];
+  }
+  lastTargetNotesCount = currentChordNotesCount;
 }
 
 void playChordProgression(int currentErrorValue, int currentBaseNote) {
@@ -152,13 +184,20 @@ void playChordProgression(int currentErrorValue, int currentBaseNote) {
     chord1Def = IChord_abs; chord2Def = iiChord_abs;
   }
 
-  sendChord(chord1Def, chord1Size, transpositionOffset);
-  visualFeedback(255);
-  delay(250);
+  // Velocity increases with error
+  int velocity = map(currentErrorValue, 0, 127, 40, 110);
+  // Rhythm becomes more frantic with error
+  int baseDelay = map(currentErrorValue, 0, 127, 500, 150);
 
-  sendChord(chord2Def, chord2Size, transpositionOffset);
+  sendChord(chord1Def, chord1Size, transpositionOffset, velocity);
+  visualFeedback(255);
+  delay(baseDelay);
+
+  // Second chord might be slightly softer or louder depending on trend
+  int velocity2 = constrain(velocity + trend * 10, 30, 127);
+  sendChord(chord2Def, chord2Size, transpositionOffset, velocity2);
   visualFeedback(128);
-  delay(250);
+  delay(baseDelay);
 
   stopLastPlayedNotes();
   visualFeedback(0);
