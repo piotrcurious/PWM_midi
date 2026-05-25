@@ -29,11 +29,19 @@ extern const int IVChord_abs[];
 extern const int viChord_abs[];
 extern const int iiiChord_abs[];
 
+// EV Context Structure
+struct EVContext {
+    int error;    // 0-127
+    int speed;    // 0-127
+    int throttle; // 0-127
+    int brake;    // 0-127
+};
+
 // Functions
 bool isDissonant(int note, const int* contextNotes, int contextNotesCount);
 int predictError(int currentError);
 void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOffset, int velocity = 100);
-void playChordProgression(int currentErrorValue, int currentBaseNote);
+void playChordProgression(const EVContext& context, int currentBaseNote);
 void sendMIDINoteOnWrapper(int note, int velocity = 127);
 void sendMIDINoteOffWrapper(int note);
 void visualFeedback(int intensity);

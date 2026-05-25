@@ -162,42 +162,53 @@ void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOf
   lastTargetNotesCount = currentChordNotesCount;
 }
 
-void playChordProgression(int currentErrorValue, int currentBaseNote) {
+void playChordProgression(const EVContext& context, int currentBaseNote) {
   const int* chord1Def;
   const int* chord2Def;
   int chord1Size = 4;
   int chord2Size = 4;
 
+  // Base transposition offset
   int transpositionOffset = currentBaseNote - 60;
 
-  if (currentErrorValue < ERROR_THRESHOLD_1) {
+  // Speed influences the register (octave)
+  int speedOffset = map(context.speed, 0, 127, -12, 12);
+  transpositionOffset += speedOffset;
+
+  // Error selects the harmonic complexity/progression
+  if (context.error < ERROR_THRESHOLD_1) {
     chord1Def = iiChord_abs; chord2Def = VChord_abs;
-  } else if (currentErrorValue < ERROR_THRESHOLD_2) {
+  } else if (context.error < ERROR_THRESHOLD_2) {
     chord1Def = iiiChord_abs; chord2Def = viChord_abs;
-  } else if (currentErrorValue < ERROR_THRESHOLD_3) {
+  } else if (context.error < ERROR_THRESHOLD_3) {
     chord1Def = viChord_abs; chord2Def = iiChord_abs;
-  } else if (currentErrorValue < ERROR_THRESHOLD_4) {
+  } else if (context.error < ERROR_THRESHOLD_4) {
     chord1Def = IVChord_abs; chord2Def = VChord_abs;
-  } else if (currentErrorValue < ERROR_THRESHOLD_5) {
+  } else if (context.error < ERROR_THRESHOLD_5) {
     chord1Def = VChord_abs; chord2Def = IChord_abs;
   } else {
     chord1Def = IChord_abs; chord2Def = iiChord_abs;
   }
 
-  // Velocity increases with error
-  int velocity = map(currentErrorValue, 0, 127, 40, 110);
-  // Rhythm becomes more frantic with error
-  int baseDelay = map(currentErrorValue, 0, 127, 500, 150);
+  // Velocity influenced by throttle and error, but dampened by brake
+  int baseVelocity = map(context.error, 0, 127, 40, 80) + map(context.throttle, 0, 127, 0, 40);
+  int velocity = constrain(baseVelocity - map(context.brake, 0, 127, 0, 50), 30, 120);
+
+  // Rhythm (delay) influenced by speed and error, slowed down by brake
+  int baseDelay = map(context.error, 0, 127, 500, 200) - map(context.speed, 0, 127, 0, 100);
+  int actualDelay = constrain(baseDelay + map(context.brake, 0, 127, 0, 400), 100, 1000);
 
   sendChord(chord1Def, chord1Size, transpositionOffset, velocity);
   visualFeedback(255);
-  delay(baseDelay);
+  delay(actualDelay);
 
-  // Second chord might be slightly softer or louder depending on trend
-  int velocity2 = constrain(velocity + trend * 10, 30, 127);
-  sendChord(chord2Def, chord2Size, transpositionOffset, velocity2);
-  visualFeedback(128);
-  delay(baseDelay);
+  // If braking hard, maybe don't play the second chord or play it very softly
+  if (context.brake < 100) {
+    int velocity2 = constrain(velocity + trend * 10, 30, 127);
+    sendChord(chord2Def, chord2Size, transpositionOffset, velocity2);
+    visualFeedback(128);
+    delay(actualDelay);
+  }
 
   stopLastPlayedNotes();
   visualFeedback(0);

@@ -50,10 +50,9 @@ void test_velocity_and_timing() {
     std::cout << "Testing velocity and timing..." << std::endl;
 
     MIDI.events.clear();
-    // Low error = Low velocity
-    playChordProgression(10, 60);
-    // After playChordProgression, stopLastPlayedNotes is called, sending Note Offs with velocity 0.
-    // We need to find the Note On events.
+    // Low error, no throttle, no brake = Low velocity
+    EVContext ctxLow = {10, 0, 0, 0};
+    playChordProgression(ctxLow, 60);
     int lowVelocity = 0;
     for (auto it = MIDI.events.rbegin(); it != MIDI.events.rend(); ++it) {
         if (it->on) {
@@ -63,8 +62,9 @@ void test_velocity_and_timing() {
     }
 
     MIDI.events.clear();
-    // High error = High velocity
-    playChordProgression(110, 60);
+    // High error, high throttle, no brake = High velocity
+    EVContext ctxHigh = {110, 127, 127, 0};
+    playChordProgression(ctxHigh, 60);
     int highVelocity = 0;
     for (auto it = MIDI.events.rbegin(); it != MIDI.events.rend(); ++it) {
         if (it->on) {
@@ -73,8 +73,22 @@ void test_velocity_and_timing() {
         }
     }
 
-    std::cout << "Low Error Velocity: " << lowVelocity << ", High Error Velocity: " << highVelocity << std::endl;
+    std::cout << "Low Context Velocity: " << lowVelocity << ", High Context Velocity: " << highVelocity << std::endl;
     assert(highVelocity > lowVelocity);
+
+    MIDI.events.clear();
+    // High error, high throttle, HIGH BRAKE = Lowered velocity
+    EVContext ctxBrake = {110, 127, 127, 127};
+    playChordProgression(ctxBrake, 60);
+    int brakeVelocity = 0;
+    for (auto it = MIDI.events.rbegin(); it != MIDI.events.rend(); ++it) {
+        if (it->on) {
+            brakeVelocity = it->velocity;
+            break;
+        }
+    }
+    std::cout << "High Context Velocity: " << highVelocity << ", Brake Velocity: " << brakeVelocity << std::endl;
+    assert(brakeVelocity < highVelocity);
 
     std::cout << "Velocity and timing tests passed!" << std::endl;
 }
