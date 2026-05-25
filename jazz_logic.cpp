@@ -1,8 +1,12 @@
 #include "jazz_logic.h"
 
 #ifdef MOCK_TESTING
+#include <fstream>
+#include <sstream>
 MockMIDI MIDI;
 MockSerial Serial;
+#else
+#include <SD.h>
 #endif
 
 const int ERROR_THRESHOLD_1 = 21;
@@ -132,6 +136,41 @@ void sendMIDINoteOffWrapper(int note) {
   }
 }
 
+bool loadPatternFromSD(const char* filename, int* patternNotes, int* patternSize, int maxNotes) {
+    *patternSize = 0;
+#ifdef MOCK_TESTING
+    std::ifstream file(filename);
+    if (!file.is_open()) return false;
+    std::string line;
+    while (std::getline(file, line) && *patternSize < maxNotes) {
+        std::stringstream ss(line);
+        std::string val;
+        while (std::getline(ss, val, ',') && *patternSize < maxNotes) {
+            try {
+                patternNotes[*patternSize] = std::stoi(val);
+                (*patternSize)++;
+            } catch (...) {}
+        }
+    }
+    return true;
+#else
+    char fullpath[64];
+    snprintf(fullpath, sizeof(fullpath), "/%s", filename);
+    File file = SD.open(fullpath);
+    if (!file) return false;
+    while (file.available() && *patternSize < maxNotes) {
+        // Simple CSV-like parsing: assumes notes separated by commas or newlines
+        int note = file.parseInt();
+        if (note >= 0 && note <= 127) {
+            patternNotes[*patternSize] = note;
+            (*patternSize)++;
+        }
+    }
+    file.close();
+    return *patternSize > 0;
+#endif
+}
+
 void stopLastPlayedNotes() {
   for (int i = 0; i < lastPlayedNotesCount; ++i) {
     if (lastPlayedNotes[i] != -1) {
@@ -150,7 +189,7 @@ void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOf
 
   // Simple voice leading: find the best octave for each note in the new chord
   // to be close to the average of the last played notes.
-  int targetCenter = 64; // Default middle C area
+  int targetCenter = 64 + transpositionOffset;
   if (lastTargetNotesCount > 0) {
     long sum = 0;
     for (int i = 0; i < lastTargetNotesCount; ++i) sum += lastTargetNotes[i];
@@ -200,7 +239,7 @@ void playChordProgression(const EVContext& context, int currentBaseNote) {
   int headingOffset = map(context.heading % 360, 0, 359, 0, 11);
 
   // Altitude shifts the overall register
-  int altitudeOffset = constrain(context.altitude / 100, -24, 24);
+  int altitudeOffset = (context.altitude / 100);
 
   // Base transposition offset
   int transpositionOffset = (currentBaseNote - 60) + headingOffset + altitudeOffset;
@@ -243,6 +282,24 @@ void playChordProgression(const EVContext& context, int currentBaseNote) {
   chord2Def = allChords[nextChordIdx];
   currentChordIdx = nextChordIdx;
 
+  // Geospatial location for "recurring themes"
+  // Use lat/lon to seed a local variations
+  long geoSeed = (long)(context.latitude * 100) + (long)(context.longitude * 100);
+
+  // Jazznet pattern integration: try to load a pattern based on location
+  int jazznetNotes[16];
+  int jazznetSize = 0;
+  bool useJazznet = false;
+
+  if (context.satellites >= 6) { // Only use Jazznet if we have good GPS
+      char filename[32];
+      // Use lat/lon to pick a file: /jazznet/P<seed>.CSV
+      snprintf(filename, sizeof(filename), "jazznet/P%ld.CSV", geoSeed % 100);
+      if (loadPatternFromSD(filename, jazznetNotes, &jazznetSize, 16)) {
+          useJazznet = true;
+      }
+  }
+
   // Velocity influenced by throttle and error, but dampened by brake
   // Signal jitter also affects velocity
   int baseVelocity = map(context.error, 0, 127, 40, 80) + map(context.throttle, 0, 127, 0, 40) + jitter;
@@ -253,14 +310,24 @@ void playChordProgression(const EVContext& context, int currentBaseNote) {
   int baseDelay = map(context.error, 0, 127, 500, 200) - map(context.speed, 0, 127, 0, 100) + (jitter * 5);
   int actualDelay = constrain(baseDelay + map(context.brake, 0, 127, 0, 400), 100, 1000);
 
-  sendChord(chord1Def, chord1Size, transpositionOffset, velocity);
+  if (useJazznet && jazznetSize >= 4) {
+      // Play Jazznet pattern instead of a standard chord for the first "beat"
+      sendChord(jazznetNotes, jazznetSize > 4 ? 4 : jazznetSize, transpositionOffset, velocity);
+  } else {
+      sendChord(chord1Def, chord1Size, transpositionOffset, velocity);
+  }
   visualFeedback(255);
   delay(actualDelay);
 
   // If braking hard, maybe don't play the second chord or play it very softly
   if (context.brake < 100) {
     int velocity2 = constrain(velocity + trend * 10, 30, 127);
-    sendChord(chord2Def, chord2Size, transpositionOffset, velocity2);
+    if (useJazznet && jazznetSize >= 8) {
+        // Play second part of Jazznet pattern
+        sendChord(jazznetNotes + 4, (jazznetSize - 4) > 4 ? 4 : (jazznetSize - 4), transpositionOffset, velocity2);
+    } else {
+        sendChord(chord2Def, chord2Size, transpositionOffset, velocity2);
+    }
     visualFeedback(128);
     delay(actualDelay);
   }

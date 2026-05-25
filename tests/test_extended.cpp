@@ -137,15 +137,19 @@ void test_gps_influence() {
     // Altitude test
     resetImprovisation();
     MIDI.events.clear();
-    EVContext ctxSeaLevel = {50, 0, 0, 0, 0, 0, 10, 0.0, 0.0};
+    // Use fixed error to avoid random Markov transitions during altitude test
+    // Satellites < 6 to avoid Jazznet loading during GPS influence tests
+    EVContext ctxSeaLevel = {0, 0, 0, 0, 0, 0, 0, 0.0, 0.0};
     playChordProgression(ctxSeaLevel, 60);
-    int seaLevelNote = MIDI.events.front().note;
+    int seaLevelNote = 0;
+    for (const auto& e : MIDI.events) if (e.on) { seaLevelNote = e.note; break; }
 
     resetImprovisation(); // Reset to ensure same chord choice
     MIDI.events.clear();
-    EVContext ctxMountain = {50, 0, 0, 0, 0, 1000, 10, 0.0, 0.0}; // 1000m high
+    EVContext ctxMountain = {0, 0, 0, 0, 0, 1000, 0, 0.0, 0.0}; // 1000m high
     playChordProgression(ctxMountain, 60);
-    int mountainNote = MIDI.events.front().note;
+    int mountainNote = 0;
+    for (const auto& e : MIDI.events) if (e.on) { mountainNote = e.note; break; }
 
     std::cout << "Sea Level Note: " << seaLevelNote << ", Mountain Note: " << mountainNote << std::endl;
     assert(mountainNote > seaLevelNote);
@@ -153,13 +157,13 @@ void test_gps_influence() {
     // Heading test
     resetImprovisation();
     MIDI.events.clear();
-    EVContext ctxNorth = {50, 0, 0, 0, 0, 0, 10, 0.0, 0.0};
+    EVContext ctxNorth = {50, 0, 0, 0, 0, 0, 0, 0.0, 0.0};
     playChordProgression(ctxNorth, 60);
     int northNote = MIDI.events.front().note;
 
     resetImprovisation();
     MIDI.events.clear();
-    EVContext ctxEast = {50, 0, 0, 0, 90, 0, 10, 0.0, 0.0};
+    EVContext ctxEast = {50, 0, 0, 0, 90, 0, 0, 0.0, 0.0};
     playChordProgression(ctxEast, 60);
     int eastNote = MIDI.events.front().note;
 
@@ -167,6 +171,37 @@ void test_gps_influence() {
     assert(northNote != eastNote);
 
     std::cout << "GPS influence tests passed!" << std::endl;
+}
+
+void test_jazznet_loading() {
+    std::cout << "Testing Jazznet loading..." << std::endl;
+
+    EVContext ctx = {50, 0, 0, 0, 0, 0, 10, 0.0, 0.0}; // GeoSeed 0
+    MIDI.events.clear();
+    resetImprovisation();
+    playChordProgression(ctx, 60);
+
+    // Check if any of the notes from P0.CSV (60, 64, 67, 71, ...) are present
+    // Note: voice leading might shift octaves, so we check note % 12
+    bool foundC = false;
+    for (const auto& e : MIDI.events) {
+        if (e.on && (e.note % 12 == 0)) foundC = true;
+    }
+    assert(foundC == true);
+
+    // Test different location P1
+    ctx.latitude = 0.01; // GeoSeed 1
+    MIDI.events.clear();
+    resetImprovisation();
+    playChordProgression(ctx, 60);
+
+    bool foundD = false;
+    for (const auto& e : MIDI.events) {
+        if (e.on && (e.note % 12 == 2)) foundD = true;
+    }
+    assert(foundD == true);
+
+    std::cout << "Jazznet loading tests passed!" << std::endl;
 }
 
 void test_markov_transitions() {
@@ -180,7 +215,9 @@ void test_markov_transitions() {
 
     for (int i = 0; i < 20; ++i) {
         MIDI.events.clear();
-        playChordProgression(ctx, 60);
+        // Satellites 0 to avoid Jazznet overriding Markov transitions
+        EVContext ctxMarkov = {50, 0, 0, 0, 0, 0, 0, 0.0, 0.0};
+        playChordProgression(ctxMarkov, 60);
         int currentNote = MIDI.events.front().note;
         if (lastNote != -1 && currentNote != lastNote) {
             transitionCount++;
@@ -202,6 +239,7 @@ int main() {
     test_voice_leading();
     test_gps_influence();
     test_markov_transitions();
+    test_jazznet_loading();
     std::cout << "Extended tests passed!" << std::endl;
     return 0;
 }

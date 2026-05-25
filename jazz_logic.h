@@ -48,6 +48,7 @@ struct EVContext {
 bool isDissonant(int note, const int* contextNotes, int contextNotesCount);
 int predictError(int currentError);
 void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOffset, int velocity = 100);
+bool loadPatternFromSD(const char* filename, int* patternNotes, int* patternSize, int maxNotes);
 void playChordProgression(const EVContext& context, int currentBaseNote);
 void resetImprovisation();
 void sendMIDINoteOnWrapper(int note, int velocity = 127);
