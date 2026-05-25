@@ -5,6 +5,8 @@
 #include <HardwareSerial.h>
 HardwareSerial MIDI_Serial(2); // Use UART2 for MIDI
 #include <MIDI.h>
+#include <SPI.h>
+#include <SD.h>
 struct SerialMIDI {
   typedef HardwareSerial SerialType;
   SerialMIDI(SerialType& s) : serial(s) {}
@@ -30,6 +32,13 @@ void setup() {
 
   // Set ADC resolution to 12-bit
   analogReadResolution(12);
+
+  // Initialize SD Card
+  if (!SD.begin(5)) { // CS pin 5
+      Serial.println("SD Card initialization failed!");
+  } else {
+      Serial.println("SD Card initialized.");
+  }
 }
 
 void loop() {
