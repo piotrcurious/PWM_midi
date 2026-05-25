@@ -135,11 +135,13 @@ void test_gps_influence() {
     std::cout << "Testing GPS influence..." << std::endl;
 
     // Altitude test
+    resetImprovisation();
     MIDI.events.clear();
     EVContext ctxSeaLevel = {50, 0, 0, 0, 0, 0, 10, 0.0, 0.0};
     playChordProgression(ctxSeaLevel, 60);
     int seaLevelNote = MIDI.events.front().note;
 
+    resetImprovisation(); // Reset to ensure same chord choice
     MIDI.events.clear();
     EVContext ctxMountain = {50, 0, 0, 0, 0, 1000, 10, 0.0, 0.0}; // 1000m high
     playChordProgression(ctxMountain, 60);
@@ -149,11 +151,13 @@ void test_gps_influence() {
     assert(mountainNote > seaLevelNote);
 
     // Heading test
+    resetImprovisation();
     MIDI.events.clear();
     EVContext ctxNorth = {50, 0, 0, 0, 0, 0, 10, 0.0, 0.0};
     playChordProgression(ctxNorth, 60);
     int northNote = MIDI.events.front().note;
 
+    resetImprovisation();
     MIDI.events.clear();
     EVContext ctxEast = {50, 0, 0, 0, 90, 0, 10, 0.0, 0.0};
     playChordProgression(ctxEast, 60);
@@ -165,12 +169,39 @@ void test_gps_influence() {
     std::cout << "GPS influence tests passed!" << std::endl;
 }
 
+void test_markov_transitions() {
+    std::cout << "Testing Markov transitions..." << std::endl;
+
+    // We want to see if chords actually change over multiple calls
+    EVContext ctx = {50, 0, 0, 0, 0, 0, 10, 0.0, 0.0};
+
+    int transitionCount = 0;
+    int lastNote = -1;
+
+    for (int i = 0; i < 20; ++i) {
+        MIDI.events.clear();
+        playChordProgression(ctx, 60);
+        int currentNote = MIDI.events.front().note;
+        if (lastNote != -1 && currentNote != lastNote) {
+            transitionCount++;
+        }
+        lastNote = currentNote;
+    }
+
+    std::cout << "Unique transitions in 20 steps: " << transitionCount << std::endl;
+    // With Markov, we expect at least some transitions
+    assert(transitionCount > 0);
+
+    std::cout << "Markov transition tests passed!" << std::endl;
+}
+
 int main() {
     test_isDissonant_extended();
     test_chord_filtering();
     test_velocity_and_timing();
     test_voice_leading();
     test_gps_influence();
+    test_markov_transitions();
     std::cout << "Extended tests passed!" << std::endl;
     return 0;
 }

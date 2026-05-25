@@ -20,6 +20,7 @@ extern const int ERROR_THRESHOLD_3;
 extern const int ERROR_THRESHOLD_4;
 extern const int ERROR_THRESHOLD_5;
 extern const int MAX_NOTES_PER_CHORD;
+extern const int ADC_RESOLUTION;
 
 // Chord Definitions
 extern const int iiChord_abs[];
@@ -48,6 +49,7 @@ bool isDissonant(int note, const int* contextNotes, int contextNotesCount);
 int predictError(int currentError);
 void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOffset, int velocity = 100);
 void playChordProgression(const EVContext& context, int currentBaseNote);
+void resetImprovisation();
 void sendMIDINoteOnWrapper(int note, int velocity = 127);
 void sendMIDINoteOffWrapper(int note);
 void visualFeedback(int intensity);

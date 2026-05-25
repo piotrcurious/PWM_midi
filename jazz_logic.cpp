@@ -11,6 +11,11 @@ const int ERROR_THRESHOLD_3 = 63;
 const int ERROR_THRESHOLD_4 = 84;
 const int ERROR_THRESHOLD_5 = 105;
 const int MAX_NOTES_PER_CHORD = 4;
+#ifdef ESP32
+const int ADC_RESOLUTION = 4095;
+#else
+const int ADC_RESOLUTION = 1023;
+#endif
 
 static int previousError = 0;
 static int trend = 0;
@@ -27,6 +32,29 @@ const int IChord_abs[] =  {60, 64, 67, 71}; // Cmaj7
 const int IVChord_abs[] = {65, 69, 72, 76}; // Fmaj7
 const int viChord_abs[] = {69, 72, 76, 79}; // Am7
 const int iiiChord_abs[] ={64, 67, 71, 74}; // Em7
+
+const int* allChords[] = {iiChord_abs, VChord_abs, IChord_abs, IVChord_abs, viChord_abs, iiiChord_abs};
+const char* chordNames[] = {"ii", "V", "I", "IV", "vi", "iii"};
+
+// Markov transition matrix (simplified)
+// Rows: current chord, Cols: next chord probabilities (scaled to 100)
+static const int transitionMatrix[6][6] = {
+  { 5, 70,  5,  5,  5, 10}, // ii -> V (strong), iii, vi
+  { 5,  5, 70,  5, 10,  5}, // V  -> I (strong), vi
+  {10, 10,  5, 20, 30, 25}, // I  -> IV, vi, iii
+  {20, 30, 10,  5, 10, 25}, // IV -> V, ii, iii
+  {50, 10,  5, 10,  5, 20}, // vi -> ii, iii
+  {10, 10,  5, 10, 60,  5}  // iii-> vi
+};
+
+static int currentChordIdx = 2; // Start on I
+
+void resetImprovisation() {
+    currentChordIdx = 2;
+    lastTargetNotesCount = 0;
+    predictionState = 0;
+    trend = 0;
+}
 
 bool isDissonant(int note, const int* contextNotes, int contextNotesCount) {
   for (int i = 0; i < contextNotesCount; ++i) {
@@ -169,7 +197,6 @@ void playChordProgression(const EVContext& context, int currentBaseNote) {
   int chord2Size = 4;
 
   // Heading influences the "mode" or transposition offset
-  // 0=N, 90=E, 180=S, 270=W
   int headingOffset = map(context.heading % 360, 0, 359, 0, 11);
 
   // Altitude shifts the overall register
@@ -188,27 +215,28 @@ void playChordProgression(const EVContext& context, int currentBaseNote) {
     jitter = random(-5, 6);
   }
 
-  // Geospatial location for "recurring themes"
-  // Use lat/lon to seed a local variations
-  long geoSeed = (long)(context.latitude * 100) + (long)(context.longitude * 100);
-  int geoVariation = abs(geoSeed) % 3;
+  // Markov-based chord selection
+  // The error value influences how "surprising" the next chord is.
+  int nextChordIdx = 0;
+  int r = random(0, 100);
+  int cumulative = 0;
 
-  // Error and geoVariation select the harmonic complexity/progression
-  int effectiveError = constrain(context.error + geoVariation * 10, 0, 127);
-
-  if (effectiveError < ERROR_THRESHOLD_1) {
-    chord1Def = iiChord_abs; chord2Def = VChord_abs;
-  } else if (context.error < ERROR_THRESHOLD_2) {
-    chord1Def = iiiChord_abs; chord2Def = viChord_abs;
-  } else if (context.error < ERROR_THRESHOLD_3) {
-    chord1Def = viChord_abs; chord2Def = iiChord_abs;
-  } else if (context.error < ERROR_THRESHOLD_4) {
-    chord1Def = IVChord_abs; chord2Def = VChord_abs;
-  } else if (context.error < ERROR_THRESHOLD_5) {
-    chord1Def = VChord_abs; chord2Def = IChord_abs;
-  } else {
-    chord1Def = IChord_abs; chord2Def = iiChord_abs;
+  // If error is high, we might pick a less likely transition
+  if (context.error > ERROR_THRESHOLD_4) {
+      r = (r + 50) % 100;
   }
+
+  for (int i = 0; i < 6; ++i) {
+    cumulative += transitionMatrix[currentChordIdx][i];
+    if (r < cumulative) {
+      nextChordIdx = i;
+      break;
+    }
+  }
+
+  chord1Def = allChords[currentChordIdx];
+  chord2Def = allChords[nextChordIdx];
+  currentChordIdx = nextChordIdx;
 
   // Velocity influenced by throttle and error, but dampened by brake
   // Signal jitter also affects velocity
