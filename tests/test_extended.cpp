@@ -173,6 +173,38 @@ void test_gps_influence() {
     std::cout << "GPS influence tests passed!" << std::endl;
 }
 
+void test_novelty_variation() {
+    std::cout << "Testing Novelty Variation..." << std::endl;
+
+    // Low error = Low novelty (familiarity)
+    EVContext ctxLow = {0, 0, 0, 0, 0, 0, 12, 0.0, 0.0};
+    MIDI.events.clear();
+    resetImprovisation();
+    playChordProgression(ctxLow, 60);
+
+    std::vector<int> lowNotes;
+    for (const auto& e : MIDI.events) if (e.on) lowNotes.push_back(e.note % 12);
+
+    // High error = High novelty (variation)
+    EVContext ctxHigh = {127, 0, 0, 0, 0, 0, 12, 0.0, 0.0};
+    MIDI.events.clear();
+    resetImprovisation();
+    playChordProgression(ctxHigh, 60);
+
+    std::vector<int> highNotes;
+    for (const auto& e : MIDI.events) if (e.on) highNotes.push_back(e.note % 12);
+
+    std::cout << "Low Novelty Notes: "; for(int n : lowNotes) std::cout << n << " "; std::cout << std::endl;
+    std::cout << "High Novelty Notes: "; for(int n : highNotes) std::cout << n << " "; std::cout << std::endl;
+
+    // In high novelty, we expect some notes that are NOT in the standard chords (0,2,4,5,7,9,11 ...)
+    // Standard I chord: 0, 4, 7, 11. Novelty might add 2, 5, 9.
+    // This is hard to assert deterministically due to random(), but we can check if they differ.
+    assert(lowNotes != highNotes);
+
+    std::cout << "Novelty variation tests passed!" << std::endl;
+}
+
 void test_jazznet_loading() {
     std::cout << "Testing Jazznet loading..." << std::endl;
 
@@ -240,6 +272,7 @@ int main() {
     test_gps_influence();
     test_markov_transitions();
     test_jazznet_loading();
+    test_novelty_variation();
     std::cout << "Extended tests passed!" << std::endl;
     return 0;
 }

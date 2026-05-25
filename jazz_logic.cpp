@@ -310,11 +310,36 @@ void playChordProgression(const EVContext& context, int currentBaseNote) {
   int baseDelay = map(context.error, 0, 127, 500, 200) - map(context.speed, 0, 127, 0, 100) + (jitter * 5);
   int actualDelay = constrain(baseDelay + map(context.brake, 0, 127, 0, 400), 100, 1000);
 
+  // Syncopation: shift the timing of the second chord based on throttle and speed
+  int syncopation = 0;
+  if (context.throttle > 80 || context.speed > 80) {
+      syncopation = random(-actualDelay / 4, actualDelay / 4);
+  }
+
+  // Novelty Factor: high error or low satellite count increases novelty
+  int noveltyFactor = constrain(map(context.error, 0, 127, 0, 50) + map(12 - context.satellites, 0, 12, 0, 50), 0, 100);
+
+  auto playVariedChord = [&](const int* baseChord, int size, int trans, int vel) {
+      int variedChord[MAX_NOTES_PER_CHORD];
+      for (int i = 0; i < size && i < MAX_NOTES_PER_CHORD; ++i) {
+          int note = baseChord[i];
+          if (random(0, 100) < noveltyFactor) {
+              // Substitute or add color
+              int choice = random(0, 3);
+              if (choice == 0) note += 2;  // Add a 9th
+              else if (choice == 1) note += 5; // Add an 11th
+              else note += 9; // Add a 13th
+          }
+          variedChord[i] = note;
+      }
+      sendChord(variedChord, size, trans, vel);
+  };
+
   if (useJazznet && jazznetSize >= 4) {
-      // Play Jazznet pattern instead of a standard chord for the first "beat"
-      sendChord(jazznetNotes, jazznetSize > 4 ? 4 : jazznetSize, transpositionOffset, velocity);
+      // Familiarity: play the pattern as is or with variations
+      playVariedChord(jazznetNotes, jazznetSize > 4 ? 4 : jazznetSize, transpositionOffset, velocity);
   } else {
-      sendChord(chord1Def, chord1Size, transpositionOffset, velocity);
+      playVariedChord(chord1Def, chord1Size, transpositionOffset, velocity);
   }
   visualFeedback(255);
   delay(actualDelay);
@@ -323,13 +348,12 @@ void playChordProgression(const EVContext& context, int currentBaseNote) {
   if (context.brake < 100) {
     int velocity2 = constrain(velocity + trend * 10, 30, 127);
     if (useJazznet && jazznetSize >= 8) {
-        // Play second part of Jazznet pattern
-        sendChord(jazznetNotes + 4, (jazznetSize - 4) > 4 ? 4 : (jazznetSize - 4), transpositionOffset, velocity2);
+        playVariedChord(jazznetNotes + 4, (jazznetSize - 4) > 4 ? 4 : (jazznetSize - 4), transpositionOffset, velocity2);
     } else {
-        sendChord(chord2Def, chord2Size, transpositionOffset, velocity2);
+        playVariedChord(chord2Def, chord2Size, transpositionOffset, velocity2);
     }
     visualFeedback(128);
-    delay(actualDelay);
+  delay(actualDelay + syncopation);
   }
 
   stopLastPlayedNotes();
