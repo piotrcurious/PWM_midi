@@ -217,22 +217,27 @@ void playChordProgression(const EVContext& context, int currentBaseNote) {
 
   // Markov-based chord selection
   // The error value influences how "surprising" the next chord is.
-  int nextChordIdx = 0;
+  int nextChordIdx = currentChordIdx;
   int r = random(0, 100);
   int cumulative = 0;
 
-  // If error is high, we might pick a less likely transition
+  // If error is high, we might pick a less likely transition by shifting r
   if (context.error > ERROR_THRESHOLD_4) {
       r = (r + 50) % 100;
   }
 
+  bool found = false;
   for (int i = 0; i < 6; ++i) {
     cumulative += transitionMatrix[currentChordIdx][i];
     if (r < cumulative) {
       nextChordIdx = i;
+      found = true;
       break;
     }
   }
+
+  // Fallback (should not happen with good transition matrix)
+  if (!found) nextChordIdx = random(0, 6);
 
   chord1Def = allChords[currentChordIdx];
   chord2Def = allChords[nextChordIdx];

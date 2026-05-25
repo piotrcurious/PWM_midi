@@ -31,18 +31,51 @@ class MIDIController:
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
         # Controls
-        ttk.Label(main_frame, text="Error Value (0-127)").grid(row=0, column=0, sticky=tk.W)
-        self.error_scale = ttk.Scale(main_frame, from_=0, to=127, orient=tk.HORIZONTAL, command=self.update_error)
-        self.error_scale.grid(row=0, column=1, sticky=(tk.W, tk.E))
-        self.error_val = ttk.Label(main_frame, text="0")
-        self.error_val.grid(row=0, column=2)
+        controls_frame = ttk.LabelFrame(main_frame, text="EV & GPS Parameters", padding="10")
+        controls_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
 
-        ttk.Label(main_frame, text="Base Frequency (MIDI Note)").grid(row=1, column=0, sticky=tk.W)
-        self.base_scale = ttk.Scale(main_frame, from_=48, to=72, orient=tk.HORIZONTAL, command=self.update_base)
-        self.base_scale.grid(row=1, column=1, sticky=(tk.W, tk.E))
-        self.base_val = ttk.Label(main_frame, text="60")
-        self.base_val.grid(row=1, column=2)
-        self.base_scale.set(60)
+        self.params = [
+            ("Error", "e", 0, 127, 0),
+            ("Speed", "s", 0, 127, 0),
+            ("Throttle", "t", 0, 127, 0),
+            ("Brake", "B", 0, 127, 0),
+            ("Heading", "H", 0, 359, 0),
+            ("Altitude", "A", 0, 2000, 0),
+            ("Satellites", "S", 0, 12, 10),
+            ("Base Note", "b", 48, 72, 60),
+        ]
+
+        self.scales = {}
+        self.labels = {}
+
+        for i, (name, cmd, start, end, default) in enumerate(self.params):
+            ttk.Label(controls_frame, text=name).grid(row=i, column=0, sticky=tk.W)
+            scale = ttk.Scale(controls_frame, from_=start, to=end, orient=tk.HORIZONTAL,
+                              command=lambda v, c=cmd, n=name: self.update_param(c, n, v))
+            scale.set(default)
+            scale.grid(row=i, column=1, sticky=(tk.W, tk.E), padx=5)
+            val_label = ttk.Label(controls_frame, text=str(default))
+            val_label.grid(row=i, column=2)
+            self.scales[cmd] = scale
+            self.labels[name] = val_label
+
+        # Geo Controls
+        geo_frame = ttk.Frame(controls_frame)
+        geo_frame.grid(row=len(self.params), column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+
+        ttk.Label(geo_frame, text="Lat:").pack(side=tk.LEFT)
+        self.lat_entry = ttk.Entry(geo_frame, width=10)
+        self.lat_entry.insert(0, "0.0")
+        self.lat_entry.pack(side=tk.LEFT, padx=5)
+        self.lat_entry.bind("<Return>", lambda e: self.update_geo())
+
+        ttk.Label(geo_frame, text="Lon:").pack(side=tk.LEFT)
+        self.lon_entry = ttk.Entry(geo_frame, width=10)
+        self.lon_entry.insert(0, "0.0")
+        self.lon_entry.pack(side=tk.LEFT, padx=5)
+        self.lon_entry.bind("<Return>", lambda e: self.update_geo())
+
+        ttk.Button(geo_frame, text="Set Geo", command=self.update_geo).pack(side=tk.LEFT, padx=5)
 
         # Port Selection
         ttk.Label(main_frame, text="Output Port:").grid(row=2, column=0, sticky=tk.W)
@@ -134,8 +167,9 @@ class MIDIController:
             self.status_var.set(f"Status: Running (Port {port_str})")
 
             # Sync initial values
-            self.update_error(self.error_scale.get())
-            self.update_base(self.base_scale.get())
+            for _, cmd, _, _, _ in self.params:
+                self.send_cmd(cmd, self.scales[cmd].get())
+            self.update_geo()
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to start MIDI: {e}")
@@ -154,21 +188,24 @@ class MIDIController:
         self.start_btn.config(text="Start MIDI")
         self.status_var.set("Status: Disconnected")
 
-    def update_error(self, val):
+    def update_param(self, cmd, name, val):
         v = int(float(val))
-        self.error_val.config(text=str(v))
-        if self.bridge and self.bridge.stdin:
-            try:
-                self.bridge.stdin.write(f"e{v}\n")
-                self.bridge.stdin.flush()
-            except: pass
+        self.labels[name].config(text=str(v))
+        self.send_cmd(cmd, v)
 
-    def update_base(self, val):
-        v = int(float(val))
-        self.base_val.config(text=str(v))
+    def update_geo(self):
+        try:
+            lat = float(self.lat_entry.get())
+            lon = float(self.lon_entry.get())
+            self.send_cmd("L", lat)
+            self.send_cmd("O", lon)
+        except ValueError:
+            pass
+
+    def send_cmd(self, cmd, val):
         if self.bridge and self.bridge.stdin:
             try:
-                self.bridge.stdin.write(f"b{v}\n")
+                self.bridge.stdin.write(f"{cmd}{val}\n")
                 self.bridge.stdin.flush()
             except: pass
 
