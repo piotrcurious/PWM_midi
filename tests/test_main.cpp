@@ -8,10 +8,10 @@ void test_isDissonant() {
     std::cout << "Testing isDissonant..." << std::endl;
     int context[] = {60, -1, -1, -1}; // C
     assert(isDissonant(61, context, 1) == true);
-    assert(isDissonant(62, context, 1) == true);
+    assert(isDissonant(62, context, 1) == false); // Now allowed
     assert(isDissonant(64, context, 1) == false);
-    assert(isDissonant(66, context, 1) == true);
-    assert(isDissonant(70, context, 1) == true);
+    assert(isDissonant(66, context, 1) == false); // Now allowed
+    assert(isDissonant(70, context, 1) == false); // Now allowed
     std::cout << "isDissonant tests passed!" << std::endl;
 }
 

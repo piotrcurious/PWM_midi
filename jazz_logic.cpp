@@ -19,18 +19,21 @@ static int predictionState = 0;
 static int lastPlayedNotes[MAX_NOTES_PER_CHORD] = {-1, -1, -1, -1};
 static int lastPlayedNotesCount = 0;
 
-const int iiChord_abs[] = {62, 65, 69};
-const int VChord_abs[] =  {67, 71, 74};
-const int IChord_abs[] =  {60, 64, 67};
-const int IVChord_abs[] = {65, 69, 72};
-const int viChord_abs[] = {69, 72, 76};
-const int iiiChord_abs[] ={64, 67, 71};
+const int iiChord_abs[] = {62, 65, 69, 72}; // Dm7
+const int VChord_abs[] =  {67, 71, 74, 77}; // G7
+const int IChord_abs[] =  {60, 64, 67, 71}; // Cmaj7
+const int IVChord_abs[] = {65, 69, 72, 76}; // Fmaj7
+const int viChord_abs[] = {69, 72, 76, 79}; // Am7
+const int iiiChord_abs[] ={64, 67, 71, 74}; // Em7
 
 bool isDissonant(int note, const int* contextNotes, int contextNotesCount) {
   for (int i = 0; i < contextNotesCount; ++i) {
     if (contextNotes[i] == -1) continue;
     int interval = abs(note - contextNotes[i]) % 12;
-    if (interval == 1 || interval == 2 || interval == 6 || interval == 10) {
+    // In jazz, major 2nds (2) and minor 7ths (10) are often acceptable.
+    // Tritones (6) are essential in dominant chords.
+    // Minor 2nd (1) is usually the most dissonant.
+    if (interval == 1) {
       return true;
     }
   }
@@ -38,38 +41,35 @@ bool isDissonant(int note, const int* contextNotes, int contextNotesCount) {
 }
 
 int predictError(int currentError) {
+  // Simple trend analysis: if error is increasing, assume it will continue.
+  // We use predictionState to add some hysteresis to the trend detection.
   switch (predictionState) {
-    case 0:
+    case 0: // Stable
       if (currentError > previousError) {
         trend = 1;
-        predictionState = 1;
+        predictionState = 1; // Increasing
       } else if (currentError < previousError) {
         trend = -1;
-        predictionState = 2;
-      } else {
+        predictionState = 2; // Decreasing
+      }
+      break;
+    case 1: // Increasing
+      if (currentError < previousError) {
+        predictionState = 0; // Became unstable, reset to stable and see next time
         trend = 0;
       }
       break;
-    case 1:
-      if (currentError < previousError) {
-        trend = -1;
-        predictionState = 2;
-      } else if (currentError == previousError) {
-        predictionState = 0;
-      }
-      break;
-    case 2:
+    case 2: // Decreasing
       if (currentError > previousError) {
-        trend = 1;
-        predictionState = 1;
-      } else if (currentError == previousError) {
-        predictionState = 0;
+        predictionState = 0; // Became unstable
+        trend = 0;
       }
       break;
   }
 
   int randomFactor = random(-2, 3);
-  int predictedError = currentError + trend * 2 + randomFactor;
+  // Add some "momentum" to the prediction based on the trend
+  int predictedError = currentError + trend * 3 + randomFactor;
   predictedError = constrain(predictedError, 0, 127);
 
   previousError = currentError;
@@ -100,7 +100,7 @@ void sendMIDINoteOffWrapper(int note) {
   }
 }
 
-void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOffset) {
+void stopLastPlayedNotes() {
   for (int i = 0; i < lastPlayedNotesCount; ++i) {
     if (lastPlayedNotes[i] != -1) {
       sendMIDINoteOffWrapper(lastPlayedNotes[i]);
@@ -108,6 +108,10 @@ void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOf
     }
   }
   lastPlayedNotesCount = 0;
+}
+
+void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOffset) {
+  stopLastPlayedNotes();
 
   int currentChordNotes[MAX_NOTES_PER_CHORD] = {-1, -1, -1, -1};
   int currentChordNotesCount = 0;
@@ -129,8 +133,8 @@ void sendChord(const int* chordDefinition, int chordDefSize, int transpositionOf
 void playChordProgression(int currentErrorValue, int currentBaseNote) {
   const int* chord1Def;
   const int* chord2Def;
-  int chord1Size = 3;
-  int chord2Size = 3;
+  int chord1Size = 4;
+  int chord2Size = 4;
 
   int transpositionOffset = currentBaseNote - 60;
 
@@ -156,13 +160,7 @@ void playChordProgression(int currentErrorValue, int currentBaseNote) {
   visualFeedback(128);
   delay(250);
 
-  for (int i = 0; i < lastPlayedNotesCount; ++i) {
-    if (lastPlayedNotes[i] != -1) {
-      sendMIDINoteOffWrapper(lastPlayedNotes[i]);
-      lastPlayedNotes[i] = -1;
-    }
-  }
-  lastPlayedNotesCount = 0;
+  stopLastPlayedNotes();
   visualFeedback(0);
 }
 
